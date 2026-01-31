@@ -168,6 +168,9 @@ yarn deploy "your twelve or twenty four mnemonic words"
 - Requires a funded wallet (fund first with `yarn fund "your mnemonic"`).
 - Writes `midnight-local-dapp/deployment.json` with the contract address and tx hash.
 
+**If the node rejects the deploy with "Invalid Transaction: Custom error: 110"**  
+The runtime rejected the transaction (custom validity code 110). Common causes: proof/state format mismatch or node vs SDK version mismatch. Check `docker compose logs node` for details, and ensure the node image version (`midnight-node` in `compose.yml`) is compatible with the ledger-v6 and proof-server versions used by this repo.
+
 ### 6. Connect your dApp
 
 Typically, your dApp will use the `dapp-connector-api` to communicate with the Midnight Lace Wallet.

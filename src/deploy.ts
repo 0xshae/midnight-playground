@@ -12,9 +12,11 @@ import { initWalletWithSeed } from './utils';
 import { MidnightBech32m } from '@midnight-ntwrk/wallet-sdk-address-format';
 import { createConstructorContext } from '@midnight-ntwrk/compact-runtime';
 
-const NATIVE_TOKEN = ledger.nativeToken();
+const SHIELDED_NATIVE_RAW = ledger.shieldedToken().raw;
 const NETWORK_ID = 'undeployed';
 const TTL_MS = 30 * 60 * 1000;
+const WAIT_FOR_FUNDS_MS = 90_000;
+const WAIT_POLL_MS = 3_000;
 
 async function main(): Promise<void> {
     const mnemonic = process.argv.slice(2).join(' ').trim();
@@ -29,13 +31,22 @@ async function main(): Promise<void> {
     await wallet.start(shieldedSecretKeys, dustSecretKey);
 
     await rx.firstValueFrom(wallet.state().pipe(rx.filter((s) => s.isSynced)));
-    const state = await rx.firstValueFrom(wallet.state());
+    let state = await rx.firstValueFrom(wallet.state());
     const shieldedAddress = MidnightBech32m.encode('undeployed', state.shielded.address).toString();
     console.log('Your wallet address (Lace match):', shieldedAddress);
 
-    const balance = state.shielded.balances[NATIVE_TOKEN] ?? 0n;
+    let balance = state.shielded.balances[SHIELDED_NATIVE_RAW] ?? 0n;
     if (balance === 0n) {
-        console.error('Balance is 0. Fund this address from repo root: yarn fund "' + mnemonic + '"');
+        console.log('Balance is 0. Waiting for funds (e.g. after yarn fund)…');
+        const deadline = Date.now() + WAIT_FOR_FUNDS_MS;
+        while (balance === 0n && Date.now() < deadline) {
+            await new Promise((r) => setTimeout(r, WAIT_POLL_MS));
+            state = await rx.firstValueFrom(wallet.state());
+            balance = state.shielded.balances[SHIELDED_NATIVE_RAW] ?? 0n;
+        }
+    }
+    if (balance === 0n) {
+        console.error('Balance is still 0. Fund this address from repo root: yarn fund "' + mnemonic + '"');
         await wallet.stop();
         process.exit(1);
     }
@@ -43,10 +54,28 @@ async function main(): Promise<void> {
 
     const dappDir = path.join(process.cwd(), 'midnight-local-dapp');
     const contractPath = path.join(dappDir, 'contracts', 'managed', 'hello-world', 'contract', 'index.js');
+    const verifierKeyPath = path.join(dappDir, 'contracts', 'managed', 'hello-world', 'keys', 'storeMessage.verifier');
     if (!fs.existsSync(contractPath)) {
         console.error('Contract not found at', contractPath);
         await wallet.stop();
         process.exit(1);
+    }
+    if (!fs.existsSync(verifierKeyPath)) {
+        console.error('Verifier key not found at', verifierKeyPath);
+        await wallet.stop();
+        process.exit(1);
+    }
+    // ledger-v6 WASM expects verifier key with header 'midnight:verifier-key[v4]:';
+    // the contract build may emit v6. Rewrite v6 -> v4 so the setter accepts it.
+    const V6_HEADER = new TextEncoder().encode('midnight:verifier-key[v6]:');
+    const V4_HEADER = new TextEncoder().encode('midnight:verifier-key[v4]:');
+    let verifierKeyBytes = new Uint8Array(fs.readFileSync(verifierKeyPath));
+    if (
+        verifierKeyBytes.length >= V6_HEADER.length &&
+        V6_HEADER.every((b, i) => verifierKeyBytes[i] === b)
+    ) {
+        verifierKeyBytes = verifierKeyBytes.slice(0);
+        verifierKeyBytes.set(V4_HEADER.subarray(0, V4_HEADER.length), 0);
     }
 
     console.log('Loading contract...');
@@ -58,15 +87,37 @@ async function main(): Promise<void> {
     const constructorContext = createConstructorContext({}, coinPublicKeyHex);
     const constructorResult = contractInstance.initialState(constructorContext);
 
-    let ledgerContractState: ledger.ContractState;
-    const cs = constructorResult.currentContractState;
-    if (typeof (cs as { serialize?: () => Uint8Array }).serialize === 'function') {
-        ledgerContractState = ledger.ContractState.deserialize((cs as { serialize: () => Uint8Array }).serialize());
-    } else {
-        ledgerContractState = cs as unknown as ledger.ContractState;
+    // ledger-v6 expects its own ContractState instance. Use the contract's state value
+    // via encode/decode (EncodedStateValue may be shared) and copy the operation.
+    const cs = constructorResult.currentContractState as {
+        data: { state: { encode: () => ledger.EncodedStateValue } };
+        operation: (name: string) => { serialize: () => Uint8Array } | undefined;
+    };
+    const ledgerState = new ledger.ContractState();
+    try {
+        const encoded = cs.data.state.encode();
+        ledgerState.data = new ledger.ChargedState(ledger.StateValue.decode(encoded));
+    } catch {
+        // Fallback: minimal state (array with null only)
+        ledgerState.data = new ledger.ChargedState(
+            ledger.StateValue.newArray().arrayPush(ledger.StateValue.newNull())
+        );
     }
-
-    const deploy = new ledger.ContractDeploy(ledgerContractState);
+    const contractOp = cs.operation('storeMessage');
+    let storeMessageOp: ledger.ContractOperation;
+    if (contractOp) {
+        try {
+            storeMessageOp = ledger.ContractOperation.deserialize(contractOp.serialize());
+        } catch {
+            storeMessageOp = new ledger.ContractOperation();
+        }
+    } else {
+        storeMessageOp = new ledger.ContractOperation();
+    }
+    storeMessageOp.verifierKey = verifierKeyBytes;
+    ledgerState.setOperation('storeMessage', storeMessageOp);
+    ledgerState.balance = new Map();
+    const deploy = new ledger.ContractDeploy(ledgerState);
     const ttl = new Date(Date.now() + TTL_MS);
     const intent = ledger.Intent.new(ttl).addDeploy(deploy);
     const tx = ledger.Transaction.fromParts(NETWORK_ID, undefined, undefined, intent);
@@ -92,7 +143,20 @@ async function main(): Promise<void> {
               : { ...recipe, transaction: signedTx };
 
     const finalizedTx = await wallet.finalizeTransaction(recipeToFinalize);
-    const txHash = await wallet.submitTransaction(finalizedTx);
+    let txHash: string;
+    try {
+        txHash = await wallet.submitTransaction(finalizedTx);
+    } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('Custom error: 110') || msg.includes('Invalid Transaction')) {
+            console.error(
+                'The node rejected the deploy transaction (runtime error 110).\n' +
+                'This can mean invalid proof, initial state mismatch, or node/SDK version mismatch.\n' +
+                'Check: node (compose) version vs ledger-v6/proof-server versions; node logs: docker compose logs node'
+            );
+        }
+        throw err;
+    }
     console.log('Deploy transaction submitted:', txHash);
 
     const contractAddress = deploy.address.toString();
