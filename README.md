@@ -1,4 +1,4 @@
-### Self-contained local Midnight node + wallet funding helper
+### Playground to deploy midnight contracts locally with cli wallet funding support 
 
 ▶️ **[Watch the Video Explainer & Demo](https://youtu.be/1L4xR8LIe6I)** (demo is showing an earlier version, but the concepts are the same)
 
