@@ -1,196 +1,203 @@
-### Playground to deploy midnight contracts locally with cli wallet funding support 
+# Midnight Local Playground
 
-▶️ **[Watch the Video Explainer & Demo](https://youtu.be/1L4xR8LIe6I)** (demo is showing an earlier version, but the concepts are the same)
+A **playground** for writing [Compact](https://docs.midnight.network) contracts and deploying them **locally** on your machine. Use the **Midnight Lace Preview Wallet** on the **“Undeployed”** network to fund your wallet, deploy contracts, and interact with them—without depending on public testnets or faucets.
 
-`midnight-local-network` lets developers run their **own local Midnight network** using Docker—fully isolated, predictable, and independent from public testnets or faucets.
-
-This setup is especially valuable for dApp developers who want to build and test against a fully local Midnight network instead of relying on public testnets, which may be unstable or temporarily unavailable.
-
-It also includes a **wallet funding tool**, solving a key gap:
-* When the Midnight Lace Wallet is connected to a local "Undeployed" network, **there is no built-in way to fund shielded and unshielded addresses**. 
- 
-This project provides that missing capability.
+▶️ **[Watch the Video Explainer & Demo](https://youtu.be/1L4xR8LIe6I)** (earlier version; concepts are the same)
 
 ---
 
-## 🌟 Why This Exists
+## What this repo is for
 
-Building on Midnight often requires stable environments, but public testnets and faucets can be:
+- **Write** Compact smart contracts (edit the example in `midnight-local-dapp` or add your own).
+- **Run** a full local Midnight network (node, indexer, proof server) via Docker.
+- **Fund** your Lace-derived wallet using a CLI script (no built-in faucet on Undeployed).
+- **Deploy** contracts from the repo root using the **same wallet as Lace** (mnemonic-based).
+- **Interact** with deployed contracts via the Lace wallet UI or a CLI adapted for the local setup.
 
-- unavailable or undergoing maintenance
-- rate-limited
-- unstable for automated tests
-- unsuitable for offline or reproducible local workflows
-
-This repository enables you to:
-
-- Spin up a **fully functional Midnight network locally**
-- Connect the **Midnight Lace Preview Wallet** to that network
-- **Fund** any shielded address directly using the provided script
-
-Perfect for development, workshops, prototyping, CI, and experimentation.
+Ideal for development, workshops, and learning the Compact toolchain and Midnight stack locally.
 
 ---
 
-## 🚀 Key Features
+## Prerequisites
 
-- 🔧 **Local Midnight network** via Docker Compose
-- 🏦 **Funding script** for sending native tokens to shielded addresses
-- 🧪 Works without external testnets or faucets
-- 💼 Integrates with Midnight Lace Preview Wallet (“Undeployed” network)
-- 🔌 Uses standard local ports:
-    - Proof Server → `6300`
-    - Node → `9944`
-    - Indexer → `8088`
+- **Git**
+- **Docker** and **Docker Compose v2**
+- **Node.js ≥ 22.16.0** ([nvm](https://github.com/nvm-sh/nvm) recommended)
+- **Yarn** (classic)
+- **Midnight Lace Preview** (v2.36.0 or later) browser extension
 
 ---
 
-## 🛠️ Prerequisites
+## Quick reference: ports
 
-Ensure you have the following tools installed on your system:
-
-* **Git**
-* **Docker** and **Docker Compose v2**
-* **Node.js ≥ 22.16.0** (using [nvm](https://github.com/nvm-sh/nvm) is highly recommended for version management)
-* **Yarn** (classic)
-* **Lace Midnight Preview ** (v2.36.0 or later) browser extension
-
-You will also need the Midnight Lace Wallet to connect and interact with the local node.
+| Service       | Port | Purpose        |
+|---------------|------|----------------|
+| Proof Server  | 6300 | ZK proof generation |
+| Node          | 9944 | RPC / chain   |
+| Indexer       | 8088 | GraphQL API   |
 
 ---
 
-## 🚀 Setup & Usage Guide
+## Step-by-step setup
 
-Follow these steps to set up the local network and fund an address.
+All commands below are from the **repository root** unless stated otherwise.
 
-### 1. Clone the Repository
-
-Clone the project and navigate into the directory:
+### 1. Clone and install
 
 ```bash
 git clone git@github.com:bricktowers/midnight-local-network.git midnight-local-network
 cd midnight-local-network
-```
-
-### 2. Setup Node via nvm
-
-Install and use Node 22.16+:
-```bash
-nvm install 22
-nvm use 22
-```
-
-If you don’t have nvm, see:
-https://github.com/nvm-sh/nvm
-
-### 3. Install dependencies
-
-```bash
+nvm use 22   # or: nvm install 22 && nvm use 22
 yarn install
-```   
+```
 
-### 2. Set Up Node Environment
-
-The repository includes a compose.yml file that defines the local Midnight node/network services.
-
-Start the network in detached mode (-d):
+### 2. Start the local network
 
 ```bash
 docker compose up -d
 ```
 
-Tip: The explicit filename -f compose.yml is often optional, but can be used for clarity: docker compose -f compose.yml up -d.
+Give it a short time to start (e.g. 30 seconds). The node, indexer, and proof server will be available on the ports above.
 
-### 3. Connect Midnight Lace Wallet
+### 3. Connect Lace to “Undeployed”
 
-You need to configure your Midnight Lace Wallet to use your local node instead of a public testnet.
+- In **Lace** → **Settings** → **Midnight**
+- Set network to **“Undeployed”**
+- Save and switch the wallet to that network
 
-* Open the Wallet Settings -> Midnight in the Midnight Lace Wallet.
+Use the same wallet (and mnemonic) for funding and deployment so addresses match.
 
-* Switch network to "Undeployed"
+### 4. Fund your wallet
 
-* Save the configuration and switch the wallet to use that new local network.
-
-Once the wallet is connected and copy the address you want to fund.
-
-### 4. Fund an Address
-
-Once the local network is running, use the fund script to send native tokens to a receiver on the undeployed network.
-
-This script accepts one argument and supports three input types:
-
-* BIP-39 mnemonic (space-separated words) — the script will derive both receiver addresses:
-  * a shielded address (`mn_shield-addr_undeployed...`)
-  * an unshielded address (`mn_addr_undeployed...`)
-* A Midnight shielded address for undeployed (`mn_shield-addr_undeployed...`)
-* A Midnight unshielded address for undeployed (`mn_addr_undeployed...`)
-
-If you pass a mnemonic, the script derives the receiver addresses and funds both (shielded + unshielded). If you pass a single address, it funds only that address.
-
-Usage:
+The Undeployed network has no faucet. Use the included fund script with your **BIP-39 mnemonic** (the one from Lace):
 
 ```bash
-yarn fund "<mnemonic words>"
+yarn fund "your twelve or twenty four mnemonic words"
+```
+
+This funds both the shielded and unshielded addresses derived from that mnemonic (same derivation as Lace). You can also fund a single address:
+
+```bash
 yarn fund mn_shield-addr_undeployed1...
 yarn fund mn_addr_undeployed1...
 ```
-Example:  
 
-Fund both derived addresses (shielded + unshielded) from a mnemonic:
-```bash
-yarn fund "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-```
-Fund a specific shielded address:
-```bash
-yarn fund mn_shield-addr_undeployed1q....
+### 5. Generate DUST in Lace (required before deploy)
 
-```
-Fund a specific unshielded address:
-```bash
-yarn fund mn_addr_undeployed1q....
-```
-#### Notes
+Deploying a contract uses **DUST** for fees. You must have DUST in your Lace wallet on the Undeployed network:
 
-- You can use the **BIP-39 mnemonic generated by Midnight Lace at wallet creation time** as input to this script. When a mnemonic is provided, the script derives the corresponding **shielded** and **unshielded** addresses exactly as Lace would.
-- When using a mnemonic, the script logs the derived `shieldedAddress` and `unshieldedAddress` once the wallet has fully synced.
-- Shielded addresses are most commonly obtained directly from the **Midnight Lace Wallet**, but supplying the original mnemonic is useful for automated or headless setups.
-- The script **only supports the `undeployed` network**. If you provide an address from another network (i.e. the prefix does not match `mn_shield-addr_undeployed...` or `mn_addr_undeployed...`), the script will exit with an error.
+1. Open **Lace** → **Midnight** (Undeployed).
+2. Use the wallet UI to **generate DUST** (follow Lace’s in-app steps).
+3. **Wait for DUST to refill** to the required level.
 
-### 5. Deploy a contract (Hello World)
+If you skip this step, `yarn deploy` can fail due to insufficient DUST.
 
-To deploy the Hello World contract in `midnight-local-dapp` using **the same wallet as Lace** (same address from your mnemonic), run from the repo root:
+### 6. Deploy the Hello World contract
+
+From the repo root, using the **same mnemonic** as Lace:
 
 ```bash
 yarn deploy "your twelve or twenty four mnemonic words"
 ```
 
-- Uses the same wallet derivation as Lace and `yarn fund`, so the deployed contract is owned by your Lace-funded address.
-- Requires a funded wallet (fund first with `yarn fund "your mnemonic"`).
-- Writes `midnight-local-dapp/deployment.json` with the contract address and tx hash.
+- Requires a **funded** wallet (`yarn fund` first) and **DUST** (generated in Lace).
+- Deploys the contract from `midnight-local-dapp` (Hello World example).
+- Writes **`midnight-local-dapp/deployment.json`** with `contractAddress` and `txHash`.
 
-**If the node rejects the deploy with "Invalid Transaction: Custom error: 110"**  
-The runtime rejected the transaction (custom validity code 110). Common causes: proof/state format mismatch or node vs SDK version mismatch. Check `docker compose logs node` for details, and ensure the node image version (`midnight-node` in `compose.yml`) is compatible with the ledger-v6 and proof-server versions used by this repo.
+You can re-run this after changing the contract (see below).
 
-### 6. Connect your dApp
+---
 
-Typically, your dApp will use the `dapp-connector-api` to communicate with the Midnight Lace Wallet.
-When running locally, this automatically configures your dApp to connect to the “Undeployed” network.
+## Changing the contract and redeploying
 
-However, if you are interacting with Midnight using CLI tooling instead of the dApp connector, 
-you’ll need to manually set the endpoints in your dApp’s configuration:
+1. **Edit** the Compact source, e.g.  
+   `midnight-local-dapp/contracts/hello-world.compact`
+2. **Recompile** from the dApp directory:
+   ```bash
+   cd midnight-local-dapp
+   yarn compile
+   cd ..
+   ```
+3. **Redeploy** from the repo root:
+   ```bash
+   yarn deploy "your mnemonic"
+   ```
+
+The deploy script is currently wired to the **Hello World** contract and its `storeMessage` entrypoint/verifier. To deploy a different contract or entrypoint, you’d need to point the deploy script at that contract’s path and verifier key (see `src/deploy.ts`).
+
+---
+
+## Interacting with the deployed contract
+
+### Option A: Lace wallet UI
+
+Once the contract is deployed, you can interact with it through a dApp that uses the **dapp-connector-api** and is configured for the **Undeployed** network. Lace will use your local node/indexer when connected to Undeployed.
+
+### Option B: CLI (adapted for local)
+
+The [official Midnight guide](https://docs.midnight.network/getting-started/interact-with-mn-app) describes an interactive CLI for contract interaction (store message, read message, etc.). That guide targets **Testnet** and a 64-character hex wallet seed.
+
+For **this playground** (local Undeployed network):
+
+- Use **local endpoints** instead of Testnet:
+  - Indexer: `http://127.0.0.1:8088/api/v3/graphql` (WS: `ws://127.0.0.1:8088/api/v3/graphql/ws`)
+  - Node: `http://127.0.0.1:9944`
+  - Proof server: `http://127.0.0.1:6300`
+- Set **network** to **Undeployed** (e.g. `NetworkId.Undeployed`).
+- Use **`midnight-local-dapp/deployment.json`** for the contract address (written by `yarn deploy`).
+
+The `midnight-local-dapp` folder contains a starter CLI (`src/cli.ts`). To make it work locally, configure it with the endpoints above, point it at `deployment.json`, and use a wallet setup compatible with the local indexer (e.g. same derivation as Lace if you use the same mnemonic/seed approach as the deploy script).
+
+---
+
+## Repo layout (relevant parts)
+
 ```
-export class TestnetLocalConfig implements Config {
-...
-  indexer = 'http://127.0.0.1:8088/api/v1/graphql';
-  indexerWS = 'ws://127.0.0.1:8088/api/v1/graphql/ws';
-  node = 'http://127.0.0.1:9944';
-  proofServer = 'http://127.0.0.1:6300';
-...
-  setNetworkId() {
-    setNetworkId(NetworkId.Undeployed);
-  }
-}
+midnight-local-network/
+├── compose.yml          # Docker: node, indexer, proof-server
+├── package.json         # Root scripts: fund, deploy
+├── src/
+│   ├── fund.ts          # Fund shielded/unshielded from mnemonic or address
+│   ├── deploy.ts        # Deploy Hello World using Lace-compatible wallet
+│   └── utils.ts
+└── midnight-local-dapp/
+    ├── contracts/
+    │   ├── hello-world.compact   # Edit this (or add new contracts)
+    │   └── managed/hello-world/  # Compiled output, keys, contract module
+    ├── deployment.json          # Written by yarn deploy
+    ├── src/
+    │   └── cli.ts               # CLI starter for interaction (adapt for local)
+    └── package.json             # compile, build, deploy (dApp-level)
 ```
 
+---
 
+## Scripts (repo root)
 
+| Script    | Description |
+|----------|--------------|
+| `yarn fund "mnemonic"`   | Fund Lace-derived addresses on Undeployed (or pass a single address). |
+| `yarn deploy "mnemonic"` | Deploy the Hello World contract; requires funded wallet + DUST in Lace. |
+
+---
+
+## Troubleshooting
+
+- **“Balance is still 0”**  
+  Run `yarn fund "your mnemonic"` and ensure the local network is up (`docker compose up -d`).
+
+- **Deploy fails (e.g. insufficient DUST)**  
+  In Lace (Undeployed), generate DUST and wait for it to refill, then run `yarn deploy` again.
+
+- **“Invalid Transaction: Custom error: 110”**  
+  The node rejected the deploy (e.g. verifier key or proof issue). Check `docker compose logs node` and ensure node/image versions in `compose.yml` match the ledger-v6 and proof-server versions used by this repo.
+
+- **“Command 'fund' not found”**  
+  Run `yarn install` from the repo root so the `fund` script is available.
+
+---
+
+## References
+
+- [Midnight Docs – Interact with an MN app](https://docs.midnight.network/getting-started/interact-with-mn-app) (Testnet CLI flow; adapt endpoints and network for local Undeployed).
+- [Compact](https://docs.midnight.network) – Midnight’s smart contract language and toolchain.
