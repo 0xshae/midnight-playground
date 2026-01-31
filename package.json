@@ -9,10 +9,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-  "compile": "cd contracts && compact compile hello-world.compact .",
-  "build": "tsc",
-  "deploy": "node dist/deploy.js",
-  "cli": "node dist/cli.js"
+    "compile": "cd contracts && compact compile hello-world.compact .",
+    "build": "tsc",
+    "fund": "tsx src/fund.ts",
+    "deploy": "tsx src/deploy.ts",
+    "cli": "node dist/cli.js"
 },
   "dependencies": {
     "@midnight-ntwrk/compact-runtime": "^0.14.0",
