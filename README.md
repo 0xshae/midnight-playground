@@ -43,8 +43,8 @@ All commands below are from the **repository root** unless stated otherwise.
 ### 1. Clone and install
 
 ```bash
-git clone git@github.com:bricktowers/midnight-local-network.git midnight-local-network
-cd midnight-local-network
+git clone https://github.com/0xshae/midnight-playground.git midnight-playground
+cd midnight-playground
 nvm use 22   # or: nvm install 22 && nvm use 22
 yarn install
 ```
