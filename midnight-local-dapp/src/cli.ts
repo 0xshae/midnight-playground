@@ -1,51 +1,43 @@
+// Copyright 2025 Shagun Prasad
+// SPDX-License-Identifier: Apache-2.0
+// CLI for interacting with Hello World contract using same wallet as deploy/Lace
+
 import * as readline from "readline/promises";
 import { pathToFileURL } from "node:url";
 import * as path from "path";
 import * as fs from "fs";
-import * as Rx from "rxjs";
+import * as rx from "rxjs";
 import * as bip39 from "bip39";
-import { WebSocket } from "ws";
-import { WalletBuilder } from "@midnight-ntwrk/wallet";
-import type { Wallet } from "@midnight-ntwrk/wallet-api";
-import { findDeployedContract } from "@midnight-ntwrk/midnight-js-contracts";
-import { httpClientProofProvider } from "@midnight-ntwrk/midnight-js-http-client-proof-provider";
-import { indexerPublicDataProvider } from "@midnight-ntwrk/midnight-js-indexer-public-data-provider";
-import { NodeZkConfigProvider } from "@midnight-ntwrk/midnight-js-node-zk-config-provider";
-import { levelPrivateStateProvider } from "@midnight-ntwrk/midnight-js-level-private-state-provider";
-import {
-  NetworkId,
-  setNetworkId,
-  getZswapNetworkId,
-  getLedgerNetworkId,
-} from "@midnight-ntwrk/midnight-js-network-id";
-import { createBalancedTx } from "@midnight-ntwrk/midnight-js-types";
-import { nativeToken, Transaction } from "@midnight-ntwrk/ledger";
-import { Transaction as ZswapTransaction } from "@midnight-ntwrk/zswap";
+import * as ledger from "@midnight-ntwrk/ledger-v6";
+import { MidnightBech32m } from "@midnight-ntwrk/wallet-sdk-address-format";
+import { initWalletWithSeed } from "./utils.js";
 
-// Fix WebSocket for Node.js environment
-// @ts-ignore
-globalThis.WebSocket = WebSocket;
+const SHIELDED_NATIVE_RAW = ledger.shieldedToken().raw;
+const NETWORK_ID = "undeployed";
+const INDEXER_URL = "http://localhost:8088/api/v3/graphql";
 
-// Configure for local network (Undeployed) — matches midnight-local-network
-setNetworkId(NetworkId.Undeployed);
+// Query contract state from indexer
+async function queryContractState(contractAddress: string): Promise<any> {
+  const query = `
+    query ContractState($address: HexEncoded!) {
+      contractState(address: $address) {
+        data
+      }
+    }
+  `;
 
-// Local connection endpoints (indexer api/v3, node, proof server)
-const LOCAL_CONFIG = {
-  indexer: "http://localhost:8088/api/v3/graphql",
-  indexerWS: "ws://localhost:8088/api/v3/graphql/ws",
-  node: "http://localhost:9944",
-  proofServer: "http://127.0.0.1:6300",
-};
+  const response = await fetch(INDEXER_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query,
+      variables: { address: contractAddress },
+    }),
+  });
 
-const waitForFunds = (wallet: Wallet) =>
-  Rx.firstValueFrom(
-    wallet.state().pipe(
-      Rx.filter((state) => state.syncProgress?.synced === true),
-      Rx.map((s) => s.balances[nativeToken()] ?? 0n),
-      Rx.filter((balance) => balance > 0n),
-      Rx.tap((balance) => console.log(`Wallet funded with balance: ${balance}`))
-    )
-  );
+  const result = await response.json();
+  return result.data?.contractState;
+}
 
 async function main() {
   const rl = readline.createInterface({
@@ -53,69 +45,65 @@ async function main() {
     output: process.stdout,
   });
 
-  console.log("Hello World Contract CLI\n");
+  console.log("Hello World Contract CLI (Lace-compatible wallet)\n");
 
   try {
-    // Check for deployment file (must run from midnight-local-dapp directory)
+    // Check for deployment file
     if (!fs.existsSync("deployment.json")) {
       console.error(
-        "No deployment.json found! Run deploy from repo root: yarn deploy \"your mnemonic\""
+        'No deployment.json found! Run deploy from repo root: yarn deploy "your mnemonic"'
       );
       process.exit(1);
     }
 
-    const deployment = JSON.parse(
-      fs.readFileSync("deployment.json", "utf-8")
-    );
+    const deployment = JSON.parse(fs.readFileSync("deployment.json", "utf-8"));
     console.log(`Contract: ${deployment.contractAddress}\n`);
 
-    // Accept mnemonic (same as Lace / yarn fund / yarn deploy) or 64-char hex seed
-    const input = (await rl.question("Enter your mnemonic (or 64-char hex seed): ")).trim();
-    let seedHex: string;
+    // Accept mnemonic (same as Lace / yarn fund / yarn deploy)
+    const input = (
+      await rl.question("Enter your mnemonic (or 64-char hex seed): ")
+    ).trim();
+
+    let seed: Buffer;
     if (bip39.validateMnemonic(input)) {
-      // Derive 32-byte seed from mnemonic (same first 32 bytes as BIP39 seed → 64 hex chars)
-      const seed32 = bip39.mnemonicToSeedSync(input).subarray(0, 32);
-      seedHex = Buffer.from(seed32).toString("hex");
+      seed = bip39.mnemonicToSeedSync(input).subarray(0, 32) as Buffer;
     } else if (input.length === 64 && /^[0-9a-fA-F]+$/.test(input)) {
-      seedHex = input.toLowerCase();
+      seed = Buffer.from(input, "hex");
     } else {
-      console.error("Enter a valid BIP-39 mnemonic (12 or 24 words) or 64 hexadecimal characters.");
+      console.error(
+        "Enter a valid BIP-39 mnemonic (12 or 24 words) or 64 hexadecimal characters."
+      );
       rl.close();
       process.exit(1);
     }
 
-    console.log("\nConnecting to Midnight network...");
+    console.log("\nBuilding wallet (same derivation as Lace)...");
+    const { wallet, shieldedSecretKeys, dustSecretKey } =
+      await initWalletWithSeed(seed);
+    await wallet.start(shieldedSecretKeys, dustSecretKey);
 
-    // Build wallet from seed (WalletBuilder expects 64-char hex)
-    const wallet = await WalletBuilder.buildFromSeed(
-      LOCAL_CONFIG.indexer,
-      LOCAL_CONFIG.indexerWS,
-      LOCAL_CONFIG.proofServer,
-      LOCAL_CONFIG.node,
-      seedHex,
-      getZswapNetworkId(),
-      "info"
-    );
+    // Wait for wallet to sync
+    await rx.firstValueFrom(wallet.state().pipe(rx.filter((s) => s.isSynced)));
+    const state = await rx.firstValueFrom(wallet.state());
 
-    wallet.start();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const shieldedAddress = (MidnightBech32m as any).encode(
+      NETWORK_ID,
+      state.shielded.address
+    ).toString();
+    console.log(`Your wallet address (Lace match): ${shieldedAddress}`);
 
-    const state = await Rx.firstValueFrom(wallet.state());
-    console.log(`Your wallet address is: ${state.address}`);
-
-    let balance = state.balances[nativeToken()] ?? 0n;
-
+    const balance = state.shielded.balances[SHIELDED_NATIVE_RAW] ?? 0n;
     if (balance === 0n) {
-      console.log("Your wallet balance is 0.");
       console.log(
-        "Fund from repo root: yarn fund \"<mnemonic>\" or yarn fund <mn_addr_undeployed...>"
+        'Balance is 0. Fund from repo root: yarn fund "<mnemonic>"'
       );
-      console.log("Waiting to receive tokens...");
-      balance = await waitForFunds(wallet);
+    } else {
+      console.log(`Balance: ${balance}`);
     }
+    console.log();
 
-    console.log(`Balance: ${balance}\n`);
-
-    // Load compiled contract (index.js — ESM output)
+    // Load compiled contract for state decoding
     console.log("Loading contract...");
     const contractPath = path.join(process.cwd(), "contracts");
     const contractModulePath = path.join(
@@ -129,111 +117,56 @@ async function main() {
     if (!fs.existsSync(contractModulePath)) {
       console.error("Contract not found! Run: yarn compile");
       rl.close();
+      await wallet.stop();
       process.exit(1);
     }
 
     const HelloWorldModule = await import(
       pathToFileURL(contractModulePath).href
     );
-    const contractInstance = new HelloWorldModule.Contract({});
 
-    const walletState = await Rx.firstValueFrom(wallet.state());
-
-    const walletProvider = {
-      coinPublicKey: walletState.coinPublicKey,
-      encryptionPublicKey: walletState.encryptionPublicKey,
-      balanceTx(tx: any, newCoins: any) {
-        return wallet
-          .balanceTransaction(
-            ZswapTransaction.deserialize(
-              tx.serialize(getLedgerNetworkId()),
-              getZswapNetworkId()
-            ),
-            newCoins
-          )
-          .then((tx) => wallet.proveTransaction(tx))
-          .then((zswapTx) =>
-            Transaction.deserialize(
-              zswapTx.serialize(getZswapNetworkId()),
-              getLedgerNetworkId()
-            )
-          )
-          .then(createBalancedTx);
-      },
-      submitTx(tx: any) {
-        return wallet.submitTransaction(tx);
-      },
-    };
-
-    // Configure all required providers
-    console.log("Setting up providers...");
-    const zkConfigPath = path.join(contractPath, "managed", "hello-world");
-    const providers = {
-      privateStateProvider: levelPrivateStateProvider({
-        privateStateStoreName: "hello-world-state",
-      }),
-      publicDataProvider: indexerPublicDataProvider(
-        LOCAL_CONFIG.indexer,
-        LOCAL_CONFIG.indexerWS
-      ),
-      zkConfigProvider: new NodeZkConfigProvider(zkConfigPath),
-      proofProvider: httpClientProofProvider(LOCAL_CONFIG.proofServer),
-      walletProvider: walletProvider,
-      midnightProvider: walletProvider,
-    };
-
-    // Connect to contract
-    const deployed: any = await findDeployedContract(providers, {
-      contractAddress: deployment.contractAddress,
-      contract: contractInstance,
-      privateStateId: "helloWorldState",
-      initialPrivateState: {},
-    });
-
-    console.log("Connected to contract\n");
+    console.log("Ready\n");
 
     // Main menu loop
     let running = true;
     while (running) {
       console.log("--- Menu ---");
-      console.log("1. Store message");
-      console.log("2. Read current message");
+      console.log("1. Read current message");
+      console.log("2. Show wallet info");
       console.log("3. Exit");
 
       const choice = await rl.question("\nYour choice: ");
 
       switch (choice) {
-        case "1":
-          console.log("\nStoring custom message...");
-          const customMessage = await rl.question("Enter your message: ");
-          try {
-            const tx = await deployed.callTx.storeMessage(customMessage);
-            console.log("Success!");
-            console.log(`Message: "${customMessage}"`);
-            console.log(`Transaction ID: ${tx.public.txId}`);
-            console.log(`Block height: ${tx.public.blockHeight}\n`);
-          } catch (error) {
-            console.error("Failed to store message:", error);
-          }
-          break;
-
-        case "2":
+        case "1": {
           console.log("\nReading message from blockchain...");
           try {
-            const contractState = await providers.publicDataProvider.queryContractState(
+            const contractState = await queryContractState(
               deployment.contractAddress
             );
-            if (contractState) {
-              const ledger = HelloWorldModule.ledger(contractState.data);
-              const message = Buffer.from(ledger.message).toString();
+            if (contractState && contractState.data) {
+              // Decode the state using the contract module
+              const ledgerState = HelloWorldModule.ledger(contractState.data);
+              const message = Buffer.from(ledgerState.message).toString();
               console.log(`Current message: "${message}"\n`);
             } else {
-              console.log("No message found\n");
+              console.log("No message found (contract state empty)\n");
             }
           } catch (error) {
             console.error("Failed to read message:", error);
           }
           break;
+        }
+
+        case "2": {
+          // Refresh wallet state
+          const currentState = await rx.firstValueFrom(wallet.state());
+          const currentBalance =
+            currentState.shielded.balances[SHIELDED_NATIVE_RAW] ?? 0n;
+          console.log(`\nWallet address: ${shieldedAddress}`);
+          console.log(`Balance: ${currentBalance}\n`);
+          break;
+        }
 
         case "3":
           running = false;
@@ -245,7 +178,7 @@ async function main() {
       }
     }
 
-    await wallet.close();
+    await wallet.stop();
   } catch (error) {
     console.error("\nError:", error);
   } finally {
