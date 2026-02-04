@@ -44,6 +44,15 @@ Enter your mnemonic when prompted. The CLI can:
 - **Read** the current message stored in the contract
 - **Show** your wallet address and balance
 
+## Storing messages
+
+The contract starts with an empty message. To store a message, you need to call the `storeMessage` circuit, which requires:
+- A dApp frontend connected to Lace via the dapp-connector-api
+- The frontend configured for Undeployed network with local endpoints
+- Proof generation through the proof server
+
+The CLI currently supports **reading** contract state. For **writing**, use a dApp frontend connected to Lace.
+
 ## Scripts
 
 | Script    | Description                             |

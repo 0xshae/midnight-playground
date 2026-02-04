@@ -127,55 +127,102 @@ The deploy script is currently wired to the **Hello World** contract and its `st
 
 ## Interacting with the deployed contract
 
-### Option A: Lace wallet UI
+### Option A: CLI (read contract state)
 
-Once the contract is deployed, you can interact with it through a dApp that uses the **dapp-connector-api** and is configured for the **Undeployed** network. Lace will use your local node/indexer when connected to Undeployed.
+The `midnight-local-dapp` folder includes a CLI that uses the **same wallet derivation as Lace/deploy**, so your address and balance match.
 
-### Option B: CLI (adapted for local)
+```bash
+cd midnight-local-dapp
+yarn install
+yarn build
+yarn cli
+```
 
-The [official Midnight guide](https://docs.midnight.network/getting-started/interact-with-mn-app) describes an interactive CLI for contract interaction (store message, read message, etc.). That guide targets **Testnet** and a 64-character hex wallet seed.
+Enter your mnemonic when prompted. The CLI can:
+- **Read** the current message stored in the contract
+- **Show** your wallet address and balance (matches Lace)
 
-For **this playground** (local Undeployed network):
+Example session:
+```
+Hello World Contract CLI (Lace-compatible wallet)
 
-- Use **local endpoints** instead of Testnet:
-  - Indexer: `http://127.0.0.1:8088/api/v3/graphql` (WS: `ws://127.0.0.1:8088/api/v3/graphql/ws`)
-  - Node: `http://127.0.0.1:9944`
-  - Proof server: `http://127.0.0.1:6300`
-- Set **network** to **Undeployed** (e.g. `NetworkId.Undeployed`).
-- Use **`midnight-local-dapp/deployment.json`** for the contract address (written by `yarn deploy`).
+Contract: aa6ce704ee3f482b8675ba1b0f95f9e0dfa8fbcf693800e32f3b5593dbd41688
 
-The `midnight-local-dapp` folder contains a starter CLI (`src/cli.ts`). To make it work locally, configure it with the endpoints above, point it at `deployment.json`, and use a wallet setup compatible with the local indexer (e.g. same derivation as Lace if you use the same mnemonic/seed approach as the deploy script).
+Enter your mnemonic: <your mnemonic>
+
+Building wallet (same derivation as Lace)...
+Your wallet address (Lace match): mn_shield-addr_undeployed1r6d...
+Balance: 94011000000
+
+--- Menu ---
+1. Read current message
+2. Show wallet info
+3. Exit
+```
+
+### Option B: Lace wallet UI (store messages)
+
+To **store a message** in the contract, use a dApp frontend connected to Lace:
+
+1. Build or use a dApp that connects to Lace via the **dapp-connector-api**
+2. Configure it for the **Undeployed** network with local endpoints:
+   - Indexer: `http://127.0.0.1:8088/api/v3/graphql`
+   - Node: `http://127.0.0.1:9944`
+   - Proof server: `http://127.0.0.1:6300`
+3. Point it at the contract address from `midnight-local-dapp/deployment.json`
+4. Call the `storeMessage` circuit through the dApp UI
+
+Lace will use your local node/indexer when connected to Undeployed.
+
+### Why can't the CLI store messages?
+
+Storing a message requires calling the `storeMessage` circuit, which involves:
+- Building a contract call transaction with ZK proofs
+- The proof server generating proofs for the circuit inputs
+
+This is typically handled by a dApp frontend + Lace, which manages the proof generation and transaction signing through the wallet connector. The CLI currently focuses on reading state, which doesn't require proofs.
 
 ---
 
 ## Repo layout (relevant parts)
 
 ```
-midnight-local-network/
+midnight-playground/
 ├── compose.yml          # Docker: node, indexer, proof-server
 ├── package.json         # Root scripts: fund, deploy
 ├── src/
 │   ├── fund.ts          # Fund shielded/unshielded from mnemonic or address
 │   ├── deploy.ts        # Deploy Hello World using Lace-compatible wallet
-│   └── utils.ts
+│   └── utils.ts         # Wallet initialization (HD wallet, same derivation as Lace)
 └── midnight-local-dapp/
     ├── contracts/
     │   ├── hello-world.compact   # Edit this (or add new contracts)
     │   └── managed/hello-world/  # Compiled output, keys, contract module
-    ├── deployment.json          # Written by yarn deploy
+    ├── deployment.json           # Written by yarn deploy
     ├── src/
-    │   └── cli.ts               # CLI starter for interaction (adapt for local)
-    └── package.json             # compile, build, deploy (dApp-level)
+    │   ├── cli.ts                # CLI for reading contract state
+    │   └── utils.ts              # Wallet utils (same as root)
+    └── package.json              # compile, build, cli scripts
 ```
 
 ---
 
-## Scripts (repo root)
+## Scripts
 
-| Script    | Description |
-|----------|--------------|
+### Repo root
+
+| Script                   | Description |
+|--------------------------|-------------|
 | `yarn fund "mnemonic"`   | Fund Lace-derived addresses on Undeployed (or pass a single address). |
 | `yarn deploy "mnemonic"` | Deploy the Hello World contract; requires funded wallet + DUST in Lace. |
+
+### midnight-local-dapp
+
+| Script        | Description                                |
+|---------------|--------------------------------------------|
+| `yarn compile`| Compile `contracts/hello-world.compact`    |
+| `yarn build`  | Compile TypeScript (`src/` → `dist/`)      |
+| `yarn cli`    | Run the interactive CLI (read contract state, show wallet info) |
 
 ---
 
