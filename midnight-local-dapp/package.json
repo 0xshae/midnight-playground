@@ -8,6 +8,7 @@
     "compile": "compact compile contracts/hello-world.compact contracts/managed/hello-world",
     "build": "tsc",
     "deploy": "node dist/deploy.js",
+    "cli": "node dist/cli.js",
     "postinstall": "patch-package",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
