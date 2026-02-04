@@ -102,17 +102,69 @@ yarn deploy "your twelve word mnemonic phrase"
 
 ## 6. Interaction
 
-To interact with your contract, you can use the included CLI starter.
+### Reading Contract State (CLI)
 
-1. Open `midnight-local-dapp/src/cli.ts`.
-2. Notice the endpoints point to localhost:
-   - **Indexer:** `http://localhost:8088`
-   - **Proof Server:** `http://localhost:6300`
-3. Run the CLI (if configured) to call your `storeMessage` circuit. Each time you call it, your local Proof Server will generate a new ZK proof!
+The playground includes a CLI that uses the **same wallet derivation as Lace**, so your address and balance match.
+
+```bash
+cd midnight-local-dapp
+yarn install
+yarn build
+yarn cli
+```
+
+Enter your mnemonic when prompted. You'll see:
+
+```
+Hello World Contract CLI (Lace-compatible wallet)
+
+Contract: aa6ce704ee3f482b...
+
+Enter your mnemonic: <your mnemonic>
+
+Building wallet (same derivation as Lace)...
+Your wallet address (Lace match): mn_shield-addr_undeployed1r6d...
+Balance: 94011000000
+
+--- Menu ---
+1. Read current message
+2. Show wallet info
+3. Exit
+```
+
+The CLI can:
+- **Read** the current message stored in the contract
+- **Show** your wallet address and balance (matches Lace)
+
+### Storing Messages (dApp + Lace)
+
+The contract starts with an **empty** message. To store a message, you need to call the `storeMessage` circuit.
+
+**Why can't the CLI store messages?**
+
+Storing requires:
+1. Building a contract call transaction
+2. Generating a ZK proof for the circuit inputs
+3. Signing and submitting the transaction
+
+This flow is handled by **Lace + a dApp frontend**:
+- The dApp calls the contract via the **dapp-connector-api**
+- Lace manages proof generation and transaction signing
+- The proof server (`http://localhost:6300`) generates the ZK proofs
+
+To store a message:
+1. Build or use a dApp frontend configured for the **Undeployed** network
+2. Point it at your local endpoints (indexer: `http://localhost:8088`, node: `http://localhost:9944`)
+3. Connect Lace (set to Undeployed)
+4. Call the `storeMessage` circuit through the dApp UI
+
+After storing, run the CLI again and select "Read current message" to see your stored message.
 
 ---
 
 ## Troubleshooting Tips
 
+- **"No message found (contract state empty)":** The contract deploys with an empty message. You need to call `storeMessage` via a dApp + Lace to store a message first.
 - **Insufficient DUST:** Even on a local network, Midnight uses DUST for fees. Ensure you "Generate DUST" inside the Lace wallet (Undeployed network) after funding.
 - **Docker Logs:** If deployment hangs, run `docker compose logs -f` to see if the Node or Indexer is throwing errors.
+- **CLI shows different address than deploy:** Make sure you're using the **same mnemonic** for both. The CLI uses the same HD wallet derivation as `yarn deploy` and Lace.
