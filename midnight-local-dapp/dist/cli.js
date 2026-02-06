@@ -7,7 +7,7 @@ import * as path from "path";
 import * as fs from "fs";
 import * as rx from "rxjs";
 import * as bip39 from "bip39";
-import * as ledger from "@midnight-ntwrk/ledger-v6";
+import * as ledger from "@midnight-ntwrk/ledger-v7";
 import { MidnightBech32m } from "@midnight-ntwrk/wallet-sdk-address-format";
 import { initWalletWithSeed } from "./utils.js";
 const SHIELDED_NATIVE_RAW = ledger.shieldedToken().raw;
