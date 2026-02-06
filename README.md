@@ -235,7 +235,7 @@ midnight-playground/
   In Lace (Undeployed), generate DUST and wait for it to refill, then run `yarn deploy` again.
 
 - **“Invalid Transaction: Custom error: 110”**  
-  The node rejected the deploy (e.g. verifier key or proof issue). Check `docker compose logs node` and ensure node/image versions in `compose.yml` match the ledger-v6 and proof-server versions used by this repo.
+  The node rejected the deploy (e.g. verifier key or proof issue). Check `docker compose logs node` and ensure node/image versions in `compose.yml` match the ledger-v7 and proof-server versions used by this repo.
 
 - **“Command 'fund' not found”**  
   Run `yarn install` from the repo root so the `fund` script is available.
