@@ -8,7 +8,7 @@ import * as rx from 'rxjs';
 import * as path from 'path';
 import { pathToFileURL } from 'node:url';
 import * as fs from 'fs';
-import * as ledger from '@midnight-ntwrk/ledger-v6';
+import * as ledger from '@midnight-ntwrk/ledger-v7';
 import { initWalletWithSeed } from './utils';
 import { MidnightBech32m } from '@midnight-ntwrk/wallet-sdk-address-format';
 import { createConstructorContext } from '@midnight-ntwrk/compact-runtime';
@@ -66,7 +66,7 @@ async function main(): Promise<void> {
         await wallet.stop();
         process.exit(1);
     }
-    // ledger-v6 WASM expects verifier key with header 'midnight:verifier-key[v4]:';
+    // ledger-v7 WASM expects verifier key with header 'midnight:verifier-key[v4]:';
     // the contract build may emit v6. Rewrite v6 -> v4 so the setter accepts it.
     const V6_HEADER = new TextEncoder().encode('midnight:verifier-key[v6]:');
     const V4_HEADER = new TextEncoder().encode('midnight:verifier-key[v4]:');
@@ -88,7 +88,7 @@ async function main(): Promise<void> {
     const constructorContext = createConstructorContext({}, coinPublicKeyHex);
     const constructorResult = contractInstance.initialState(constructorContext);
 
-    // ledger-v6 expects its own ContractState instance. Use the contract's state value
+    // ledger-v7 expects its own ContractState instance. Use the contract's state value
     // via encode/decode (EncodedStateValue may be shared) and copy the operation.
     const cs = constructorResult.currentContractState as {
         data: { state: { encode: () => ledger.EncodedStateValue } };
@@ -124,26 +124,15 @@ async function main(): Promise<void> {
     const tx = ledger.Transaction.fromParts(NETWORK_ID, undefined, undefined, intent);
 
     console.log('Balancing and proving deploy transaction...');
-    const recipe = await wallet.balanceTransaction(shieldedSecretKeys, dustSecretKey, tx, ttl);
-
-    const unprovenTx =
-        recipe.type === 'TransactionToProve'
-            ? recipe.transaction
-            : recipe.type === 'BalanceTransactionToProve'
-              ? recipe.transactionToProve
-              : recipe.transaction;
+    const recipe = await wallet.balanceUnprovenTransaction(
+        tx as ledger.UnprovenTransaction,
+        { shieldedSecretKeys, dustSecretKey },
+        { ttl }
+    );
 
     const signSegment = (payload: Uint8Array): ledger.Signature => unshieldedKeystore.signData(payload);
-    const signedTx = await wallet.signTransaction(unprovenTx, signSegment);
-
-    const recipeToFinalize =
-        recipe.type === 'TransactionToProve'
-            ? { type: 'TransactionToProve' as const, transaction: signedTx }
-            : recipe.type === 'BalanceTransactionToProve'
-              ? { ...recipe, transactionToProve: signedTx }
-              : { ...recipe, transaction: signedTx };
-
-    const finalizedTx = await wallet.finalizeTransaction(recipeToFinalize);
+    const signedRecipe = await wallet.signRecipe(recipe, signSegment);
+    const finalizedTx = await wallet.finalizeRecipe(signedRecipe);
     let txHash: string;
     try {
         txHash = await wallet.submitTransaction(finalizedTx);
@@ -153,7 +142,7 @@ async function main(): Promise<void> {
             console.error(
                 'The node rejected the deploy transaction (runtime error 110).\n' +
                 'This can mean invalid proof, initial state mismatch, or node/SDK version mismatch.\n' +
-                'Check: node (compose) version vs ledger-v6/proof-server versions; node logs: docker compose logs node'
+                'Check: node (compose) version vs ledger-v7/proof-server versions; node logs: docker compose logs node'
             );
         }
         throw err;

@@ -6,7 +6,7 @@ import pinoPretty from 'pino-pretty';
 import {initWalletWithSeed} from "./utils";
 import {MidnightBech32m} from '@midnight-ntwrk/wallet-sdk-address-format';
 import * as rx from 'rxjs';
-import * as ledger from '@midnight-ntwrk/ledger-v6';
+import * as ledger from '@midnight-ntwrk/ledger-v7';
 import * as bip39 from 'bip39';
 import {CombinedTokenTransfer} from "@midnight-ntwrk/wallet-sdk-facade";
 
@@ -165,22 +165,17 @@ async function main(): Promise<void> {
 
 
         const recipe = await sender.wallet.transferTransaction(
-            sender.shieldedSecretKeys,
-            sender.dustSecretKey,
             outputs,
-            new Date(Date.now() + 30 * 60 * 1000),
+            { shieldedSecretKeys: sender.shieldedSecretKeys, dustSecretKey: sender.dustSecretKey },
+            { ttl: new Date(Date.now() + 30 * 60 * 1000), payFees: true },
         );
 
-        const tx = await sender.wallet
-            .signTransaction(recipe.transaction, (payload) => sender.unshieldedKeystore.signData(payload))
+        const signSegment = (payload: Uint8Array): ledger.Signature =>
+            sender.unshieldedKeystore.signData(payload);
+        const signedRecipe = await sender.wallet.signRecipe(recipe, signSegment);
+        logger.info('Transfer recipe created');
 
-        logger.info(
-            'Transfer recipe created',
-        );
-
-        const transaction = await sender.wallet
-            .finalizeTransaction({ type: 'TransactionToProve', transaction: tx });
-
+        const transaction = await sender.wallet.finalizeRecipe(signedRecipe);
         logger.info('Transaction proof generated');
 
         const txHash = await sender.wallet.submitTransaction(transaction);
