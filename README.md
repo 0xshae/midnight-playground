@@ -1,5 +1,7 @@
 # Midnight Local Playground
 
+This project extends the Midnight Network with additional developer tooling.
+
 A **playground** for writing [Compact](https://docs.midnight.network) contracts and deploying them **locally** on your machine. Use the **Midnight Lace Preview Wallet** on the **“Undeployed”** network to fund your wallet, deploy contracts, and interact with them—without depending on public testnets or faucets.
 
 ---
