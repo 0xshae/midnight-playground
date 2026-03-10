@@ -1,5 +1,4 @@
-// Copyright 2025 Shagun Prasad
-// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 Brick Towers
 
 import pino from 'pino';
 import pinoPretty from 'pino-pretty';
