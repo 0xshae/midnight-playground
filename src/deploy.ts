@@ -1,5 +1,4 @@
-// Copyright 2025 Shagun Prasad
-// SPDX-License-Identifier: Apache-2.0
+// Copyright 2025 Brick Towers
 // Deploy Hello World contract using the same wallet as Lace (mnemonic → same address).
 // Run from repo root: yarn deploy "your mnemonic words"
 
